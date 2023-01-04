@@ -92,6 +92,9 @@ class KafkaCallback(CustomizeMixin, BackendQueue):
                         LOG.info(f'{self.__class__.__name__}: "{self.producer.client._client_id}" connected to cluster containing {len(self.producer.client.cluster.brokers())} broker(s)')
                         self.running = True
 
+    def partition(self, data: dict) -> Optional[int]:
+        return None
+
     async def writer(self):
         await self._connect()
         while self.running:
