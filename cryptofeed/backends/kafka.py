@@ -7,20 +7,27 @@ associated with this software.
 from collections import defaultdict
 import asyncio
 import logging
-from typing import Optional, ByteString
+from typing import Dict, Optional, ByteString
 
 from aiokafka import AIOKafkaProducer
 from aiokafka.errors import RequestTimedOutError, KafkaConnectionError, NodeNotReadyError
 from yapic import json
 
 from cryptofeed.backends.backend import BackendBookCallback, BackendCallback, BackendQueue
+from cryptofeed.backends.mixins.customize_mixin import CustomizeMixin
 
 LOG = logging.getLogger('feedhandler')
 
 
-class KafkaCallback(BackendQueue):
-    def __init__(self, key=None, numeric_type=float, none_to=None, **kwargs):
+class KafkaCallback(CustomizeMixin, BackendQueue):
+    def __init__(self, topic: Optional[str] = None, key: Optional[str] = None, numeric_type=float, none_to=None, **kwargs):
         """
+        This callback uses the following `CustomizeMixin` features:
+            - `topic` and `key` accept template strings.
+        
+        See docs/customize_mixin.md for more details
+        
+        ---
         You can pass configuration options to AIOKafkaProducer as keyword arguments.
         (either individual kwargs, an unpacked dictionary `**config_dict`, or both)
         A full list of configuration parameters can be found at
@@ -40,11 +47,22 @@ class KafkaCallback(BackendQueue):
         """
         self.producer_config = kwargs
         self.producer = None
-        self.key: str = key or self.default_key
+
         self.numeric_type = numeric_type
         self.none_to = none_to
         # Do not allow writer to send messages until connection confirmed
         self.running = False
+        
+        # ---------- Instance variables for CustomizeMixin ----------
+        # Store user-supplied key/topic in temp variable before processing
+        self.key_template: Optional[str] = key
+        self.key: str = str()
+        self.topic_template: Optional[str] = topic
+        
+        self.custom_strings: Dict[str, str] = dict()  # Dict store for fast retrieval of customised or dynamic keys/topics
+        self.custom_string_keys: Dict[str, list] = dict()  # Lists of keys to use when searching string dict
+        # -----------------------------------------------------------
+        
     
     def _default_serializer(self, to_bytes: dict | str) -> ByteString:
         if isinstance(to_bytes, dict):
@@ -91,10 +109,11 @@ class KafkaCallback(BackendQueue):
         while self.running:
             async with self.read_queue() as updates:
                 for index in range(len(updates)):
-                    topic = self.topic(updates[index])
+                    topic = self.get_formatted_string('topic', self.topic_template, updates[index])
+                    key = self.get_formatted_string('key', self.key_template, updates[index]) if self.key_template else self.channel_name
                     # Check for user-provided serializers, otherwise use default
                     value = updates[index] if self.producer_config.get('value_serializer') else self._default_serializer(updates[index])
-                    key = self.key if self.producer_config.get('key_serializer') else self._default_serializer(self.key)
+                    key = key if self.producer_config.get('key_serializer') else self._default_serializer(key)
                     partition = self.partition(updates[index])
                     try:
                         send_future = await self.producer.send(topic, value, key, partition)
@@ -110,15 +129,15 @@ class KafkaCallback(BackendQueue):
 
 
 class TradeKafka(KafkaCallback, BackendCallback):
-    default_key = 'trades'
+    channel_name = 'trades'
 
 
 class FundingKafka(KafkaCallback, BackendCallback):
-    default_key = 'funding'
+    channel_name = 'funding'
 
 
 class BookKafka(KafkaCallback, BackendBookCallback):
-    default_key = 'book'
+    channel_name = 'book'
 
     def __init__(self, *args, snapshots_only=False, snapshot_interval=1000, **kwargs):
         self.snapshots_only = snapshots_only
@@ -128,32 +147,32 @@ class BookKafka(KafkaCallback, BackendBookCallback):
 
 
 class TickerKafka(KafkaCallback, BackendCallback):
-    default_key = 'ticker'
+    channel_name = 'ticker'
 
 
 class OpenInterestKafka(KafkaCallback, BackendCallback):
-    default_key = 'open_interest'
+    channel_name = 'open_interest'
 
 
 class LiquidationsKafka(KafkaCallback, BackendCallback):
-    default_key = 'liquidations'
+    channel_name = 'liquidations'
 
 
 class CandlesKafka(KafkaCallback, BackendCallback):
-    default_key = 'candles'
+    channel_name = 'candles'
 
 
 class OrderInfoKafka(KafkaCallback, BackendCallback):
-    default_key = 'order_info'
+    channel_name = 'order_info'
 
 
 class TransactionsKafka(KafkaCallback, BackendCallback):
-    default_key = 'transactions'
+    channel_name = 'transactions'
 
 
 class BalancesKafka(KafkaCallback, BackendCallback):
-    default_key = 'balances'
+    channel_name = 'balances'
 
 
 class FillsKafka(KafkaCallback, BackendCallback):
-    default_key = 'fills'
+    channel_name = 'fills'
