@@ -24,7 +24,8 @@ class KafkaCallback(CustomizeMixin, BackendQueue):
         """
         This callback uses the following `CustomizeMixin` features:
             - `topic` and `key` accept template strings.
-        
+            - `data_targets` is a dictionary for selecting, relabeling and/or reordering available data types
+                    
         See docs/customize_mixin.md for more details
         
         ---
@@ -59,6 +60,8 @@ class KafkaCallback(CustomizeMixin, BackendQueue):
         self.topic_template: Optional[str] = topic
         self.custom_strings: Dict[str, str] = dict()  # Dict store for fast retrieval of customised or dynamic keys/topics
         self.custom_string_keys: Dict[str, list] = dict()  # Lists of keys to use when searching string dict
+        
+        self.data_targets = self.valid_targets(data_targets) if data_targets else None
         # -----------------------------------------------------------
         
     
@@ -100,12 +103,19 @@ class KafkaCallback(CustomizeMixin, BackendQueue):
         while self.running:
             async with self.read_queue() as updates:
                 for index in range(len(updates)):
-                    topic = self.get_formatted_string('topic', self.topic_template, updates[index])
-                    key = self.get_formatted_string('key', self.key_template, updates[index]) if self.key_template else self.channel_name
+                    data = updates[index]
+                    #First, format topic and key in case required data subsequently removed when applying data_targets
+                    topic = self.get_formatted_string('topic', self.topic_template, data)
+                    key = self.get_formatted_string('key', self.key_template, data) if self.key_template else self.channel_name
+
+                    # If provided, format data package as per user specification
+                    if self.data_targets:
+                        data = self.customize_data_package(data)
+
                     # Check for user-provided serializers, otherwise use default
-                    value = updates[index] if self.producer_config.get('value_serializer') else self._default_serializer(updates[index])
+                    value = data if self.producer_config.get('value_serializer') else self._default_serializer(data)
                     key = key if self.producer_config.get('key_serializer') else self._default_serializer(key)
-                    partition = self.partition(updates[index])
+                    partition = self.partition(data)
                     try:
                         send_future = await self.producer.send(topic, value, key, partition)
                         await send_future

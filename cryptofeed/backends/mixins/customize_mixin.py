@@ -1,6 +1,6 @@
-from typing import List, Optional, Union
+import asyncio
+from typing import Any, List, Optional, Union
 import logging
-from pprint import pp
 
 LOG = logging.getLogger('feedhandler')
 
@@ -9,6 +9,29 @@ class CustomizeMixin:
 
     STANDARD_KEYWORDS = ['exchange', 'channel']
     DYNAMIC_KEYWORDS = "symbol side type status interval client_order_id account currency order_id liquidity".split()
+    INIT_VALID_ATTR_CHECK = {
+        'trades': ['exchange', 'symbol', 'price', 'amount', 'side', 'id', 'type', 'timestamp', 'raw'], 
+        'funding': ['exchange', 'symbol', 'mark_price', 'rate', 'next_funding_time', 'predicted_rate', 'timestamp', 'raw'],
+        'book': [ 'exchange', 'symbol', 'book', 'delta', 'sequence_number', 'checksum', 'timestamp', 'raw'],
+        'ticker': ['exchange', 'symbol', 'bid', 'ask', 'timestamp', 'raw'],
+        'open_interest': ['exchange', 'symbol', 'open_interest', 'timestamp', 'raw'],
+        'liquidations': ['exchange', 'symbol', 'side', 'quantity', 'price', 'id', 'status', 'timestamp', 'raw'],
+        'candles': ['exchange', 'symbol', 'start', 'stop', 'interval', 'trades', 'open', 'close', 'high', 'low', 'volume', 'closed', 'timestamp', 'raw'],
+        'order_info': ['exchange', 'symbol', 'id', 'client_order_id', 'side', 'status', 'type', 'price', 'amount', 'remaining', 'account', 'timestamp', 'raw'],
+        'transactions': ['exchange', 'currency', 'type', 'status', 'amount', 'timestamp', 'raw'],
+        'balances': ['exchange', 'currency', 'balance', 'reserved', 'raw'],
+        'fills': ['exchange', 'symbol', 'price', 'amount', 'side', 'fee', 'id', 'order_id', 'liquidity', 'type', 'account', 'timestamp', 'raw'],
+    }
+
+    def valid_targets(self, data_targets:dict[str, Any]) -> dict[str, Any]:
+        """
+        Verifies that the keys of the user-supplied `data_targets` dictionary are valid for the data type of the channel.
+        """
+        for k, v in data_targets.items():
+            if k not in self.INIT_VALID_ATTR_CHECK[self.channel_name]:
+                LOG.error(TypeError(f"{self.__class__.__name__} : 'data_targets' check failed: '{k}' is not a valid attribute for '{self.channel_name}' data. Please check valid options in types.pyx"))
+                raise SystemExit
+        return data_targets
 
     def get_formatted_string(self, str_type: str, user_template: Optional[str], data: dict):
         """
@@ -37,12 +60,25 @@ class CustomizeMixin:
                 try:
                     self.custom_strings[f"{str_type}-{'-'.join([data[key] for key in key_list])}"] = dynamic_string
                 except KeyError as e:
-                    LOG.error(f"{__class__.__name__} : Your {str_type} template '{user_template}' includes the {e} keyword. {self.channel_name.capitalize()} data has no {e} value. Remove it from your custom {str_type}")
-                    raise SystemExit
-                return dynamic_string
+                    LOG.error(f"{self.__class__.__name__} : Your {str_type} template '{user_template}' includes the {e} keyword. {self.channel_name.capitalize()} data has no {e} value. Remove it from your custom {str_type}")
+                    self.stop()
+                else:
+                    return dynamic_string
             else:
                 self.custom_strings[str_type] = standard_string
                 return standard_string
+
+    def customize_data_package(self, data: dict[str, Any]) -> dict[str, Any]:
+        """
+        This method formats the exchange data based on the items included in 
+        the user-supplied `data_targets` dict. The resulting dictionary maintains the order
+        of data from the user's dictionary, and applies new keys/labels to each data point,
+        if provided
+        """
+        new_data_package = {}
+        for k, v in self.data_targets.items():
+            new_data_package[v] = data[k]
+        return new_data_package
 
     def _customize_string(self, user_template: str, data: dict, dynamic: bool):
         swap_list = self._find_swaps(user_template, dynamic=dynamic)
