@@ -20,7 +20,7 @@ LOG = logging.getLogger('feedhandler')
 
 
 class KafkaCallback(CustomizeMixin, BackendQueue):
-    def __init__(self, topic: Optional[str] = None, key: Optional[str] = None, numeric_type=float, none_to=None, **kwargs):
+    def __init__(self, topic: Optional[str] = None, key: Optional[str] = None, data_targets: Optional[Dict[str, str]] = None, numeric_type=float, none_to=None, **kwargs):
         """
         This callback uses the following `CustomizeMixin` features:
             - `topic` and `key` accept template strings.
@@ -56,9 +56,7 @@ class KafkaCallback(CustomizeMixin, BackendQueue):
         # ---------- Instance variables for CustomizeMixin ----------
         # Store user-supplied key/topic in temp variable before processing
         self.key_template: Optional[str] = key
-        self.key: str = str()
         self.topic_template: Optional[str] = topic
-        
         self.custom_strings: Dict[str, str] = dict()  # Dict store for fast retrieval of customised or dynamic keys/topics
         self.custom_string_keys: Dict[str, list] = dict()  # Lists of keys to use when searching string dict
         # -----------------------------------------------------------
@@ -93,16 +91,6 @@ class KafkaCallback(CustomizeMixin, BackendQueue):
                     else:
                         LOG.info(f'{self.__class__.__name__}: "{self.producer.client._client_id}" connected to cluster containing {len(self.producer.client.cluster.brokers())} broker(s)')
                         self.running = True
-
-
-    def topic(self, data: dict) -> str:
-        return f"{self.key}-{data['exchange']}-{data['symbol']}"
-
-    def partition_key(self, data: dict) -> Optional[bytes]:
-        return None
-
-    def partition(self, data: dict) -> Optional[int]:
-        return None
 
     async def writer(self):
         await self._connect()
