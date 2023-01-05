@@ -86,10 +86,7 @@ class CustomizeMixin:
         of data from the user's dictionary, and applies new keys/labels to each data point,
         if provided
         """
-        new_data_package = {}
-        for k, v in self.data_targets.items():
-            new_data_package[v] = data[k]
-        return new_data_package
+        return {v: data[k] for k, v in self.data_targets.items()}
 
     def _customize_string(self, user_template: str, data: dict, dynamic: bool):
         swap_list = self._find_swaps(user_template, dynamic=dynamic)
