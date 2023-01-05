@@ -56,8 +56,8 @@ class KafkaCallback(CustomizeMixin, BackendQueue):
         
         # ---------- Instance variables for CustomizeMixin ----------
         # Store user-supplied key/topic in temp variable before processing
-        self.key_template: Optional[str] = self.valid_template(key, 'key') if key else None
-        self.topic_template: Optional[str] = self.valid_template(topic, 'topic') if topic else None
+        self.key_template: Optional[str] = self.valid_template('key', key) if key else None
+        self.topic_template: Optional[str] = self.valid_template('topic', topic) if topic else None
         self.custom_strings: Dict[str, str] = dict()  # Dict store for fast retrieval of customised or dynamic keys/topics
         self.custom_string_keys: Dict[str, list] = dict()  # Lists of keys to use when searching string dict
         
