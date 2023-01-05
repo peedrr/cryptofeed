@@ -23,15 +23,18 @@ class CustomizeMixin:
         'fills': {'strings': ['exchange', 'symbol', 'side', 'id', 'order_id', 'liquidity', 'type', 'account'], 'others': ['price', 'amount', 'fee', 'timestamp', 'raw']},
     }
 
-    def valid_template(self, user_template, str_description):
+    def valid_template(self, str_type: str, user_template: str) -> str:
         """
         Verifies that the user template contains valid keywords
         i.e. str type attributes which exist in the expected data type.
+        
+        str_type: the purpose of the required string e.g. 'topic' (Kafka), 'key' (Redis), 'subject' (NATS)
+        user_template: the user-provided template string
         """
         keys_in_template = [word.lower() for word in self._case_generator(self.DYNAMIC_KEYWORDS) if (word in user_template)]
         for key in keys_in_template:
             if key not in self.VALID_ATTR[self.channel_name]['strings']:
-                LOG.error(TypeError(f"{self.__class__.__name__} : {self.channel_name.capitalize()} {str_description} invalid: {self.channel_name.capitalize()} data type has no '{key}' data. Check valid (str only) options in types.pyx"))
+                LOG.error(TypeError(f"{self.__class__.__name__} : {self.channel_name.capitalize()} {str_type} invalid: {self.channel_name.capitalize()} data type has no '{key}' data. Check valid (str only) options in types.pyx"))
                 raise SystemExit
         return user_template
 
@@ -49,7 +52,7 @@ class CustomizeMixin:
         """
         Takes a user template and returns a (customized) string
 
-        str_type: the purpose of the required string e.g. topic (Kafka), key (Redis/GCP Pub/Sub), subject (NATS)
+        str_type: the purpose of the required string e.g. 'topic' (Kafka), 'key' (Redis), 'subject' (NATS)
         user_template: the user-provided template string
         data: the data dict containing the string elements to swap in
         """
