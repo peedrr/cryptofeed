@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 import logging
 
 
@@ -25,8 +25,10 @@ class CustomizeMixin:
 
     def valid_template(self, str_type: str, user_template: str) -> str:
         """
-        Verifies that the user template contains valid keywords
-        i.e. str type attributes which exist in the expected data type.
+        Verifies that the user template contains valid keywords (i.e. str type attributes)
+        and that they exist in the expected data type.
+        
+        Use this method inside __init__ to validate user input prior to run.
         
         str_type: the purpose of the required string e.g. 'topic' (Kafka), 'key' (Redis), 'subject' (NATS)
         user_template: the user-provided template string
@@ -40,7 +42,10 @@ class CustomizeMixin:
 
     def valid_targets(self, data_targets:dict[str, Any]) -> dict[str, Any]:
         """
-        Verifies that the keys of the user-supplied `data_targets` dictionary are valid for the data type of the channel.
+        Verifies that the keys of the user-supplied `data_targets` dictionary are
+        valid for the data type of the channel.
+        
+        Use this method inside __init__ to validate user input prior to run.
         """
         for k in data_targets:
             if k not in [*self.VALID_ATTR[self.channel_name]['strings'], *self.VALID_ATTR[self.channel_name]['others']]:

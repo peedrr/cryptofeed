@@ -5,16 +5,25 @@ Please see the LICENSE file for the terms and conditions
 associated with this software.
 '''
 from collections import defaultdict
+from typing import Dict, Optional
 
 import aioredis
 from yapic import json
 
 from cryptofeed.backends.backend import BackendBookCallback, BackendCallback, BackendQueue
+from cryptofeed.backends.mixins.customize_mixin import CustomizeMixin
 
 
-class RedisCallback(BackendQueue):
-    def __init__(self, host='127.0.0.1', port=6379, socket=None, key=None, none_to='None', numeric_type=float, **kwargs):
+class RedisCallback(CustomizeMixin, BackendQueue):
+    def __init__(self, host='127.0.0.1', port=6379, socket=None, key: Optional[str] = None, data_targets: Optional[Dict[str, str]] = None, none_to='None', numeric_type=float, **kwargs):
         """
+        This callback uses the following `CustomizeMixin` features:
+            - `key` accepts template strings.
+            - `data_targets` is a dictionary for selecting, relabeling and/or reordering available data types
+                    
+        See docs/customize_mixin.md for more details
+        
+        ---
         setting key lets you override the prefix on the
         key used in redis. The defaults are related to the data
         being stored, i.e. trade, funding, etc
@@ -25,10 +34,16 @@ class RedisCallback(BackendQueue):
             port = None
 
         self.redis = f"{prefix}{host}" + f":{port}" if port else ""
-        self.key = key if key else self.default_key
         self.numeric_type = numeric_type
         self.none_to = none_to
         self.running = True
+        # ---------- Instance variables for CustomizeMixin ----------
+        self.key_template = self.valid_template('key', key) if key else None
+        self.data_targets = self.valid_targets(data_targets) if data_targets else None
+        self.custom_strings: Dict[str, str] = dict()  # Dict store for fast retrieval of customised and/or dynamic strings
+        self.custom_string_keys: Dict[str, list] = dict()  # Lists of keys to use when searching custom_strings dict
+        # -----------------------------------------------------------
+
 
 
 class RedisZSetCallback(RedisCallback):
@@ -49,7 +64,13 @@ class RedisZSetCallback(RedisCallback):
             async with self.read_queue() as updates:
                 async with conn.pipeline(transaction=False) as pipe:
                     for update in updates:
-                        pipe = pipe.zadd(f"{self.key}-{update['exchange']}-{update['symbol']}", {json.dumps(update): update[self.score_key]}, nx=True)
+                        key = self.get_formatted_string('key', self.key_template, update) if self.key_template else self.channel_name
+                        # Default score_key is timestamp which could potentially be removed update by subsequent if statement
+                        score_key = update[self.score_key]
+                        # If provided, format data package as per user specification
+                        if self.data_targets:
+                            update = self.customize_data_package(update) 
+                        pipe = pipe.zadd(f"{key}", {json.dumps(update): score_key}, nx=True)
                     await pipe.execute()
 
         await conn.close()
@@ -64,6 +85,7 @@ class RedisStreamCallback(RedisCallback):
             async with self.read_queue() as updates:
                 async with conn.pipeline(transaction=False) as pipe:
                     for update in updates:
+                        key = self.get_formatted_string('key', self.key_template, update) if self.key_template else self.channel_name
                         if 'delta' in update:
                             update['delta'] = json.dumps(update['delta'])
                         elif 'book' in update:
@@ -71,7 +93,10 @@ class RedisStreamCallback(RedisCallback):
                         elif 'closed' in update:
                             update['closed'] = str(update['closed'])
 
-                        pipe = pipe.xadd(f"{self.key}-{update['exchange']}-{update['symbol']}", update)
+                        # If provided, format data package as per user specification
+                        if self.data_targets:
+                            update = self.customize_data_package(update)
+                        pipe = pipe.xadd(f"{key}", update)
                     await pipe.execute()
 
         await conn.close()
@@ -79,23 +104,23 @@ class RedisStreamCallback(RedisCallback):
 
 
 class TradeRedis(RedisZSetCallback, BackendCallback):
-    default_key = 'trades'
+    channel_name = 'trades'
 
 
 class TradeStream(RedisStreamCallback, BackendCallback):
-    default_key = 'trades'
+    channel_name = 'trades'
 
 
 class FundingRedis(RedisZSetCallback, BackendCallback):
-    default_key = 'funding'
+    channel_name = 'funding'
 
 
 class FundingStream(RedisStreamCallback, BackendCallback):
-    default_key = 'funding'
+    channel_name = 'funding'
 
 
 class BookRedis(RedisZSetCallback, BackendBookCallback):
-    default_key = 'book'
+    channel_name = 'book'
 
     def __init__(self, *args, snapshots_only=False, snapshot_interval=1000, score_key='receipt_timestamp', **kwargs):
         self.snapshots_only = snapshots_only
@@ -105,7 +130,7 @@ class BookRedis(RedisZSetCallback, BackendBookCallback):
 
 
 class BookStream(RedisStreamCallback, BackendBookCallback):
-    default_key = 'book'
+    channel_name = 'book'
 
     def __init__(self, *args, snapshots_only=False, snapshot_interval=1000, **kwargs):
         self.snapshots_only = snapshots_only
@@ -115,64 +140,64 @@ class BookStream(RedisStreamCallback, BackendBookCallback):
 
 
 class TickerRedis(RedisZSetCallback, BackendCallback):
-    default_key = 'ticker'
+    channel_name = 'ticker'
 
 
 class TickerStream(RedisStreamCallback, BackendCallback):
-    default_key = 'ticker'
+    channel_name = 'ticker'
 
 
 class OpenInterestRedis(RedisZSetCallback, BackendCallback):
-    default_key = 'open_interest'
+    channel_name = 'open_interest'
 
 
 class OpenInterestStream(RedisStreamCallback, BackendCallback):
-    default_key = 'open_interest'
+    channel_name = 'open_interest'
 
 
 class LiquidationsRedis(RedisZSetCallback, BackendCallback):
-    default_key = 'liquidations'
+    channel_name = 'liquidations'
 
 
 class LiquidationsStream(RedisStreamCallback, BackendCallback):
-    default_key = 'liquidations'
+    channel_name = 'liquidations'
 
 
 class CandlesRedis(RedisZSetCallback, BackendCallback):
-    default_key = 'candles'
+    channel_name = 'candles'
 
 
 class CandlesStream(RedisStreamCallback, BackendCallback):
-    default_key = 'candles'
+    channel_name = 'candles'
 
 
 class OrderInfoRedis(RedisZSetCallback, BackendCallback):
-    default_key = 'order_info'
+    channel_name = 'order_info'
 
 
 class OrderInfoStream(RedisStreamCallback, BackendCallback):
-    default_key = 'order_info'
+    channel_name = 'order_info'
 
 
 class TransactionsRedis(RedisZSetCallback, BackendCallback):
-    default_key = 'transactions'
+    channel_name = 'transactions'
 
 
 class TransactionsStream(RedisStreamCallback, BackendCallback):
-    default_key = 'transactions'
+    channel_name = 'transactions'
 
 
 class BalancesRedis(RedisZSetCallback, BackendCallback):
-    default_key = 'balances'
+    channel_name = 'balances'
 
 
 class BalancesStream(RedisStreamCallback, BackendCallback):
-    default_key = 'balances'
+    channel_name = 'balances'
 
 
 class FillsRedis(RedisZSetCallback, BackendCallback):
-    default_key = 'fills'
+    channel_name = 'fills'
 
 
 class FillsStream(RedisStreamCallback, BackendCallback):
-    default_key = 'fills'
+    channel_name = 'fills'
